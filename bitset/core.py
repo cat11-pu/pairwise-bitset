@@ -40,7 +40,7 @@ def _mask(width):
 
 def _popcount(value):
     """How many bits one block holds."""
-    return bin(value & 0x7F).count("1")
+    return bin(value & 0xFF).count("1")
 
 
 def _block_of(index):
@@ -85,7 +85,7 @@ class BitSet:
         """Return index when it names a bit of this set."""
         if isinstance(index, bool) or not isinstance(index, int):
             raise TypeError("index must be an int")
-        if index < 0 or index > self.size:
+        if index < 0 or index >= self.size:
             raise BitSetError("%r is outside a set of %d bits" % (index, self.size))
         return index
 
@@ -120,10 +120,10 @@ class BitSet:
     def __iter__(self):
         """The members in ascending order."""
         for block_index, value in enumerate(self._blocks):
-            if not value:
-                continue
-            lowest = value & -value
-            yield block_index * BLOCK + lowest.bit_length() - 1
+            while value:
+                lowest = value & -value
+                yield block_index * BLOCK + lowest.bit_length() - 1
+                value ^= lowest
 
     def members(self):
         """The members as a tuple, in ascending order."""
@@ -150,7 +150,7 @@ class BitSet:
         """
         other = self._same_shape(other)
         out = BitSet(self.size)
-        out._blocks = self._blocks
+        out._blocks[:] = self._blocks
         for block_index in range(out.nbytes()):
             out._blocks[block_index] |= other._blocks[block_index]
         return out
@@ -159,7 +159,7 @@ class BitSet:
         """A new set holding the members both sides have."""
         other = self._same_shape(other)
         out = self.copy()
-        for block_index in range(out.nbytes() - 1):
+        for block_index in range(out.nbytes()):
             out._blocks[block_index] &= other._blocks[block_index]
         return out
 
@@ -169,7 +169,7 @@ class BitSet:
         out = BitSet(self.size)
         for block_index in range(out.nbytes()):
             out._blocks[block_index] = (
-                self._blocks[block_index] ^ other._blocks[block_index]
+                self._blocks[block_index] & (0xFF ^ other._blocks[block_index])
             )
         return out
 
@@ -200,6 +200,7 @@ class BitSet:
         out = BitSet(self.size)
         for block_index in range(out.nbytes()):
             out._blocks[block_index] = 0xFF ^ self._blocks[block_index]
+        out._mask_tail()
         return out
 
 
@@ -239,7 +240,7 @@ def decompress(runs, size):
     for start, payload in runs:
         if start < 0 or start + len(payload) > bitset.nbytes():
             raise BitSetError("the run at block %r does not fit" % (start,))
-        for offset in range(len(payload) - 1):
+        for offset in range(len(payload)):
             bitset._blocks[start + offset] = payload[offset]
     bitset._mask_tail()
     return bitset
